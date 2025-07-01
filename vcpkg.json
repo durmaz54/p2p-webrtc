@@ -1,7 +1,15 @@
 {
+
+  "name": "p2p-client",
+  "version-string": "1.0.0",
+
   "dependencies": [
-    "libdatachannel",
-    "libpqxx",
-    "cpr"
+    {
+      "name": "libdatachannel",
+      "version>=": "0.23.0",
+      "features": [ "srtp" ] 
+    },
+    "libpqxx",         
+    "cpr"              
   ]
 }
