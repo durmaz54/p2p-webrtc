@@ -11,16 +11,16 @@ add_compile_options(-Wall -Wextra -Wpedantic)
 # ▸ vcpkg'den gelen libdatachannel paketi
 #    Paket adı 'rtc'; hedefi 'rtc::rtc'
 find_package(LibDataChannel CONFIG REQUIRED)
-find_package(libpqxx CONFIG REQUIRED)
-find_package(cpr REQUIRED)
+#find_package(libpqxx CONFIG REQUIRED)
+#find_package(cpr REQUIRED)
 
 
 
 # ▸ Uygulama
 add_executable(p2p_client src/main.cpp)
 target_link_libraries(p2p_client PRIVATE LibDataChannel::LibDataChannel)
-target_link_libraries(p2p_client PRIVATE libpqxx::pqxx)
-target_link_libraries(p2p_client PRIVATE cpr::cpr)
+#target_link_libraries(p2p_client PRIVATE libpqxx::pqxx)
+#target_link_libraries(p2p_client PRIVATE cpr::cpr)
 
 # ▸ Linux'ta pthread'i ekstra isterse (genelde rtc::rtc getirir)
 find_package(Threads REQUIRED)
