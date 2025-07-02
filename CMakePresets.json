@@ -1,5 +1,5 @@
 {
-    "version": 8,
+    "version": 3,
     "configurePresets": [
         {
             "name": "my-preset",
@@ -9,7 +9,7 @@
             "binaryDir": "${sourceDir}/build/",
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Debug",
-                "CMAKE_TOOLCHAIN_FILE": "/home/durmaz/vcpkg/scripts/buildsystems/vcpkg.cmake",
+                "CMAKE_TOOLCHAIN_FILE": "~/vcpkg/scripts/buildsystems/vcpkg.cmake",
                 "CMAKE_INSTALL_PREFIX": "${sourceDir}/install/"
             }
         }
