@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>feedacat.live – WS + WebRTC Client</title>
+  <style>
+    body{font-family:sans-serif;max-width:800px;margin:0 auto;padding:1rem;}
+    label{display:block;margin-top:.5rem}
+    input,select,button{width:100%;padding:.4rem;margin-top:.25rem;font-size:1rem}
+    #log{height:260px;white-space:pre-wrap;overflow-y:auto;border:1px solid #ccc;border-radius:6px;padding:.4rem}
+    video{width:100%;margin-top:1rem;background:#000}
+  </style>
+</head>
+<body>
+  <h1>feedacat.live WebSocket + WebRTC Test Client</h1>
+  <p><strong>Sunucu:</strong> <code>ws://feedacat.live:8000</code></p>
+
+  <label>Room (camera id)
+    <input id="room" placeholder="cam42" />
+  </label>
+
+  <label>Role
+    <select id="role">
+      <option value="client">client (receiver)</option>
+      <option value="camera">camera (sender)</option>
+    </select>
+  </label>
+
+  <button id="connectBtn">Connect</button>
+  <hr/>
+
+  <h2>Console Log</h2>
+  <div id="log"></div>
+
+  <video id="video" playsinline muted></video>
+
+<script>
+(() => {
+  const WS_SERVER = "ws://feedacat.live:8000/ws";
+
+  const connectBtn = document.getElementById('connectBtn');
+  const roomInput  = document.getElementById('room');
+  const roleSel    = document.getElementById('role');
+  const logDiv     = document.getElementById('log');
+  const videoEl    = document.getElementById('video');
+
+  let ws = null;
+  let pc = null;                   // RTCPeerConnection
+  let remoteCandidates = [];
+
+  const log = (m) => {
+    console.log(m);
+    logDiv.textContent += `\n${m}`;
+    logDiv.scrollTop = logDiv.scrollHeight;
+  };
+
+  // ---------- Connect button ----------
+  connectBtn.addEventListener('click', () => {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      log('Already connected');
+      return;
+    }
+
+    const room = roomInput.value.trim();
+    const role = roleSel.value;
+    if (!room) { alert('Room is required'); return; }
+
+    const url = `${WS_SERVER}?room=${encodeURIComponent(room)}&role=${role}`;
+    log(`Connecting to ${url}`);
+    ws = new WebSocket(url);
+
+    ws.onopen = () => {
+      log('WS OPEN');
+      if (role === 'client') {
+        // Tarayıcı sadece alıcı → kameraya "hazırım" mesajı yolla
+        ws.send(JSON.stringify({ type: 'ready' }));
+        log('>>> {"type":"ready"}');
+      }
+    };
+
+    ws.onmessage = async (ev) => {
+      log(`<<< ${ev.data}`);
+      const msg = JSON.parse(ev.data);
+      switch (msg.type) {
+        case 'offer':
+          if (role !== 'client') break; // yalnızca alıcı işlesin
+          await handleOffer(msg.payload);
+          break;
+        case 'answer':
+          if (role === 'camera' && pc) pc.setRemoteDescription(msg.payload);
+          break;
+        case 'candidate':
+          if (!pc) remoteCandidates.push(msg.payload);
+          else addCandidate(msg.payload);
+          break;
+        case 'bye':
+          cleanup();
+          break;
+        default:
+          break;
+      }
+    };
+
+    ws.onerror = (err) => log(`WS ERROR ${err.message || err}`);
+    ws.onclose = () => { log('WS CLOSED'); cleanup(); };
+  });
+
+  // ---------- WebRTC helpers ----------
+  function createPeer() {
+    if (pc) return pc;
+    pc = new RTCPeerConnection({ bundlePolicy: 'max-bundle' });
+
+    pc.onicecandidate = (e) => {
+      if (e.candidate) {
+        ws.send(JSON.stringify({ type: 'candidate', payload: e.candidate }));
+        log('>>> candidate');
+      }
+    };
+
+    pc.ontrack = (evt) => {
+      videoEl.srcObject = evt.streams[0];
+      videoEl.play();
+    };
+
+    return pc;
+  }
+
+  async function handleOffer(offer) {
+    const peer = createPeer();
+    await peer.setRemoteDescription(offer);
+    const answer = await peer.createAnswer();
+    await peer.setLocalDescription(answer);
+
+    ws.send(JSON.stringify({ type: 'answer', payload: answer }));
+    log('>>> answer (SDP sent)');
+
+    remoteCandidates.forEach(addCandidate);
+    remoteCandidates = [];
+  }
+
+  function addCandidate(cand) {
+    pc.addIceCandidate(cand).catch(err => log('addIceCandidate error ' + err));
+  }
+
+  function cleanup() {
+    if (pc) { pc.close(); pc = null; }
+    if (ws && ws.readyState === WebSocket.OPEN) ws.close();
+  }
+})();
+</script>
+</body>
+</html>

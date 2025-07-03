@@ -32,21 +32,76 @@ using nlohmann::json;
 
 const int BUFFER_SIZE = 2048;
 
-int main() {
+json wrap_offer(const rtc::Description& desc) {
+    return { { "type", "offer"  },
+             { "payload", desc } };                // rtc::Description JSON’e gömülür
+}
+
+json wrap_answer(const rtc::Description& desc) {
+    return { { "type", "answer" },
+             { "payload", desc } };
+}
+
+json wrap_candidate(const rtc::Candidate& cand) {
+    return { { "type", "candidate" },
+             { "payload", cand } };                // rtc::Candidate yine JSON’e gömülür
+}
+
+int main()
+{
+	rtc::InitLogger(rtc::LogLevel::Error);
+	bool isUser = false;
+	auto ws = std::make_shared<rtc::WebSocket>();
+	auto pc = std::make_shared<rtc::PeerConnection>();
+
+	ws->open("ws://feedacat.live:8000/ws?room=cam42&role=camera");
+
+	while(!ws->isOpen()){
+		std::cout << "Failed to open WebSocket connection\n";
+		std::this_thread::sleep_for(std::chrono::seconds(1));
+	}
+	std::cout << "WebSocket connection opened successfully\n";
+
+	ws->onMessage([&](rtc::message_variant data){
+        auto m = json::parse(std::get<std::string>(data));
+		// std::cout << "Received message: " << m.dump() << "\n";
+  		if(m["type"] == "answer") {
+			rtc::Description answer(m["payload"]["sdp"].get<std::string>(), "answer");
+			pc->setRemoteDescription(answer);
+			std::cout << "Received answer: " << m["payload"]["sdp"] << "\n";
+		} 
+		else if(m["type"] == "join") {
+            std::cout << "Joined room: " << m["room"] << "\n";}
+		else if(m["type"] == "ready"){
+			isUser = true;
+		}
+        else if(m["type"] == "bye") {
+			std::cout << "client bye bye" << "\n";
+        } });
+
+
 	try {
-		rtc::InitLogger(rtc::LogLevel::Debug);
-		auto pc = std::make_shared<rtc::PeerConnection>();
 
 		pc->onStateChange(
 		    [](rtc::PeerConnection::State state) { std::cout << "State: " << state << std::endl; });
 
-		pc->onGatheringStateChange([pc](rtc::PeerConnection::GatheringState state) {
+		pc->onGatheringStateChange([&pc, &ws](rtc::PeerConnection::GatheringState state) {
 			std::cout << "Gathering State: " << state << std::endl;
 			if (state == rtc::PeerConnection::GatheringState::Complete) {
 				auto description = pc->localDescription();
-				json message = {{"type", description->typeString()},
-				                {"sdp", std::string(description.value())}};
-				std::cout << message << std::endl;
+				if (description.has_value()) {
+					    json msg = {
+							{"type", "offer"},
+							{"payload", {
+								{"type", "offer"},
+								{"sdp", description},
+							}}          // libdatachannel to_json hazır
+						};
+					ws->send( msg.dump() );
+					std::cout << msg.dump() << "\n";
+				} else {
+					std::cerr << "No local description available." << std::endl;
+				}
 			}
 		});
 
@@ -70,17 +125,20 @@ int main() {
 		auto track = pc->addTrack(media);
 
 		pc->setLocalDescription();
+		
+		// std::cout << "RTP video stream expected on localhost:6000" << std::endl;
+		// std::cout << "Please copy/paste the answer provided by the browser: " << std::endl;
+		// std::string sdp;
+		// std::getline(std::cin, sdp);
 
-		std::cout << "RTP video stream expected on localhost:6000" << std::endl;
-		std::cout << "Please copy/paste the answer provided by the browser: " << std::endl;
-		std::string sdp;
-		std::getline(std::cin, sdp);
-
-		json j = json::parse(sdp);
-		rtc::Description answer(j["sdp"].get<std::string>(), j["type"].get<std::string>());
-		pc->setRemoteDescription(answer);
+		// json j = json::parse(sdp);
+		// rtc::Description answer(j["sdp"].get<std::string>(), j["type"].get<std::string>());
+		// pc->setRemoteDescription(answer);
 
 		// Receive from UDP
+		while(pc->state() != rtc::PeerConnection::State::Connected) {
+			std::this_thread::sleep_for(std::chrono::milliseconds(100));
+		}
 		char buffer[BUFFER_SIZE];
 		int len;
 		while ((len = recv(sock, buffer, BUFFER_SIZE, 0)) >= 0) {
